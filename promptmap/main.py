@@ -7,6 +7,7 @@ from . import llm_clients
 from .test_runner import run_tests
 from .utils import redirect_stdout
 from .constants import RED, RESET
+from .improver import run_improver
 
 load_dotenv()
 
@@ -44,8 +45,8 @@ def show_help():
     print("""
 Usage Examples:
 -------------
-1. Test with OpenAI (same model for target and controller):
-   python -m promptmap.main --target-model-type openai --target-model llama-3.1-70b
+1. Test with OpenAI (same model for target, controller, and improver):
+   python -m promptmap.main --target-model-type openai --target-model llama-3.1-70b --improve
 
 2. Test with Anthropic:
    python -m promptmap.main --target-model claude-3-opus-20240229 --target-model-type anthropic
@@ -65,25 +66,28 @@ Usage Examples:
 6. Test with different target and controller models:
    python -m promptmap.main --target-model llama2 --target-model-type ollama --controller-model gpt-4 --controller-model-type openai
 
-5. Run specific rules:
+7. Test with different target, controller, and improver models:
+   python -m promptmap.main --target-model-type openai --target-model llama-3.1-70b --controller-model llama-4-maverick-fp8 --controller-model-type openai --improve --improver-model llama-4-maverick-fp8 --improver-model-type openai
+
+8. Run specific rules:
    python -m promptmap.main --target-model gpt-4 --target-model-type openai --rules harmful_hidden_recording,distraction_basic
 
-6. Run specific rule types:
+9. Run specific rule types:
    python -m promptmap.main --target-model gpt-4 --target-model-type openai --rule-type distraction,hate
    # Available types: distraction, prompt_stealing, hate, social_bias, harmful, jailbreak, override
 
-7. Custom options:
+10. Custom options:
    python -m promptmap.main --target-model gpt-4 --target-model-type openai --iterations 3 --output results_gpt4.json
 
-8. Firewall testing mode:
+11. Firewall testing mode:
    python -m promptmap.main --target-model gpt-4 --target-model-type openai --firewall --pass-condition="true"
    # In firewall mode, tests pass only if the response contains the specified string
    # and is not more than twice its length
 
-9. Show only failed tests (hide passed tests):
+12. Show only failed tests (hide passed tests):
    python -m promptmap.main --target-model gpt-4 --target-model-type openai --fail
 
-10. Save console output to a log file:
+13. Save console output to a log file:
     python -m promptmap.main --target-model gpt-4 --target-model-type openai --log-file output.log
 
 Note: Make sure to set the appropriate API key in your environment:
@@ -117,6 +121,9 @@ def main():
     parser.add_argument("--controller-model", help="Controller LLM model name (model for evaluation, defaults to target model)")
     parser.add_argument("--controller-model-type", choices=["openai", "anthropic", "google", "ollama", "xai"], 
                        help="Type of the controller model (openai, anthropic, google, ollama, xai, defaults to target model type)")
+    parser.add_argument("--improve", action="store_true", help="Run the improver to suggest a better system prompt after tests complete.")
+    parser.add_argument("--improver-model", help="LLM model to use for the improvement suggestion (defaults to controller model).")
+    parser.add_argument("--improver-model-type", choices=["openai", "anthropic", "google", "ollama", "xai"], help="Type of the improver model (defaults to controller model type).")
     parser.add_argument("--severity", type=lambda s: [item.strip() for item in s.split(',')],
                        default=["low", "medium", "high"],
                        help="Comma-separated list of severity levels (low,medium,high). Defaults to all severities.")
@@ -180,6 +187,23 @@ def main():
             
             with open(args.output, 'w', encoding='utf-8') as f:
                 json.dump(results, f, indent=2, ensure_ascii=False)
+            
+            if args.improve:
+                # Determine which model and client to use for the improver
+                improver_model = args.improver_model or args.controller_model
+                improver_model_type = args.improver_model_type or args.controller_model_type
+                
+                print(f"\nInitializing client for Improver LLM: {improver_model} ({improver_model_type})")
+                llm_clients.validate_api_keys(improver_model_type)
+                improver_client = llm_clients.initialize_client(improver_model_type, args.ollama_url)
+
+                run_improver(
+                    client=improver_client,
+                    model=improver_model,
+                    model_type=improver_model_type,
+                    original_prompt_path=args.prompts,
+                    results_path=args.output
+                )
                 
         except ValueError as e:
             print(f"\n{RED}Error:{RESET} {str(e)}")

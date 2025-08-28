@@ -89,3 +89,20 @@ def redirect_stdout(new_target):
         yield
     finally:
         sys.stdout = old_target
+
+def load_all_rules_as_string() -> str:
+    """Load all YAML rule files from the rules directory and concatenate them into a single string."""
+    rule_files = glob.glob("rules/**/*.yaml", recursive=True)
+    all_rules_content = ""
+    for rule_file in rule_files:
+        with open(rule_file, 'r', encoding='utf-8') as f:
+            all_rules_content += f.read() + "\n---\n"
+    return all_rules_content
+
+def load_json_results(filepath: str) -> dict:
+    """Load the JSON results file."""
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
